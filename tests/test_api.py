@@ -20,12 +20,12 @@ QUESTION = {
 }
 
 
-def make_wav(frames=100):
+def make_wav(frames=100, rate=8000):
     buffer = io.BytesIO()
     with wave.open(buffer, "wb") as recording:
         recording.setnchannels(1)
         recording.setsampwidth(1)
-        recording.setframerate(8000)
+        recording.setframerate(rate)
         recording.writeframes(b"\x80" * frames)
     return buffer.getvalue()
 
@@ -48,7 +48,7 @@ def test_translation(client):
 
 
 def test_identity_without_provider():
-    with TestClient(create_app(Settings())) as client:
+    with TestClient(create_app(Settings()), client=("127.0.0.1", 12345)) as client:
         data = TRANSLATE | {"target_language": "en"}
         response = client.post("/api/v1/translate", json=data)
         assert response.json()["chunks"] == data["chunks"]
@@ -97,7 +97,7 @@ def test_malformed_provider_output(client, app):
 def test_question_and_context(client):
     response = client.post("/api/v1/ask", json=QUESTION)
     assert response.json() == {
-        "answer": "es: First fact",
+        "answer": "es: Page title: A\nFirst fact",
         "source": "page",
         "context_sufficient": True,
     }
@@ -148,8 +148,8 @@ def test_transcribe(client):
     )
     assert_error(
         client.post("/api/v1/transcribe", files={"file": ("a.wav", b"not audio", "audio/wav")}),
-        415,
-        "UNSUPPORTED_MEDIA_TYPE",
+        400,
+        "INVALID_AUDIO",
     )
     assert_error(
         client.post(
@@ -172,7 +172,7 @@ def test_provider_failure_timeout_and_sanitized_error(client, app):
 
     app.state.provider.answer = failed
     response = client.post("/api/v1/ask", json=QUESTION)
-    assert_error(response, 503, "PROVIDER_UNAVAILABLE")
+    assert_error(response, 502, "PROVIDER_FAILURE")
     assert "secret" not in response.text
 
     async def slow(*args):
@@ -198,9 +198,9 @@ def test_spooled_upload_closed_on_provider_failure(client, app, monkeypatch):
 
     monkeypatch.setattr(UploadFile, "close", tracking_close)
     app.state.provider.transcribe = failure
-    audio = WAV + b"\x00" * 1_100_000
+    audio = make_wav(1_100_000, rate=48000)
     response = client.post("/api/v1/transcribe", files={"file": ("sample.wav", audio, "audio/wav")})
-    assert_error(response, 503, "PROVIDER_UNAVAILABLE")
+    assert_error(response, 502, "PROVIDER_FAILURE")
     assert "private transcript" not in response.text
     assert closed and all(closed)
 

@@ -3,6 +3,7 @@ from pydantic import ValidationError
 from app.api.errors import APIError, invalid_upstream
 from app.core.config import Settings
 from app.providers.base import AIProvider
+from app.schemas.common import require_supported_language
 from app.schemas.question import QuestionRequest, QuestionResponse
 from app.services.context_service import ContextService
 
@@ -13,6 +14,7 @@ class QuestionService:
         self.provider = provider
 
     async def answer(self, request: QuestionRequest) -> QuestionResponse:
+        require_supported_language(request.language, self.settings.supported_languages)
         context = request.context
         if (
             len(request.question) > self.settings.max_question_length
@@ -26,6 +28,11 @@ class QuestionService:
         prepared = ContextService().prepare(context)
         try:
             result = await self.provider.answer(request.question, request.language, prepared)
-            return QuestionResponse.model_validate(result)
+            checked = QuestionResponse.model_validate(result)
+            if len(checked.answer) > self.settings.max_answer_chars:
+                raise ValueError("Answer exceeds output budget")
+            if checked.source.value == "page" and not prepared:
+                raise ValueError("Page attribution requires page context")
+            return checked
         except (ValidationError, ValueError, TypeError) as exc:
             raise invalid_upstream(exc) from None

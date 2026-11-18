@@ -10,3 +10,16 @@ Provider implementation and model selection await verified capabilities. The fak
 only under `tests/`. No database, browsing, or server-side reading session is used.
 `app/prompts/` contains policy text for a future adapter; it is not yet sent to any model,
 so model-level prompt-injection resistance has not been validated.
+
+`app/main.py` gates local inference requests by loopback peer; production startup requires a
+gateway assertion and a server-held gateway key. Authentication occurs before body buffering.
+`app/core/rate_limit.py` caps requests per peer in a process-local window; the shared semaphore
+caps provider operations, not request rates. A real public deployment needs network isolation,
+gateway user/session authentication and distributed quotas. Provider adapters translate vendor
+failures to the typed errors in `app/providers/errors.py`; the wrapper logs only request ID and
+error category. The provider protocol remains asynchronous and vendor-neutral.
+
+Question context labels the untrusted title and deduplicates excerpts before inference. The
+service rejects `page` attribution without usable context, but factual grounding cannot be
+proven by this structural check. Answer/transcript character ceilings apply independently of
+the future adapter's token budget.

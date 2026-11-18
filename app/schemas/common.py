@@ -10,9 +10,24 @@ class StrictModel(BaseModel):
 
 
 def validate_language(value: str) -> str:
-    if not LANGUAGE_PATTERN.fullmatch(value):
+    if not isinstance(value, str):
+        raise ValueError("Expected a language tag")
+    parts = value.split("-")
+    normalized = (
+        parts[0].lower() + ("-" + parts[1].upper() if len(parts) == 2 else "")
+        if len(parts) <= 2
+        else value
+    )
+    if not LANGUAGE_PATTERN.fullmatch(normalized):
         raise ValueError("Expected a language tag such as en or es-MX")
-    return value
+    return normalized
+
+
+def require_supported_language(value: str, supported: list[str]) -> None:
+    if supported and value not in supported:
+        from app.api.errors import APIError
+
+        raise APIError(422, "UNSUPPORTED_LANGUAGE", "Language is not supported.")
 
 
 class ErrorDetail(StrictModel):

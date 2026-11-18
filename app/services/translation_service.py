@@ -3,6 +3,7 @@ from pydantic import ValidationError
 from app.api.errors import APIError, invalid_upstream
 from app.core.config import Settings
 from app.providers.base import AIProvider
+from app.schemas.common import require_supported_language
 from app.schemas.translation import TranslationChunk, TranslationRequest, TranslationResponse
 
 
@@ -12,6 +13,8 @@ class TranslationService:
         self.provider = provider
 
     async def translate(self, request: TranslationRequest) -> TranslationResponse:
+        require_supported_language(request.source_language, self.settings.supported_languages)
+        require_supported_language(request.target_language, self.settings.supported_languages)
         if (
             len(request.chunks) > self.settings.max_chunks
             or any(len(chunk.text) > self.settings.max_chunk_length for chunk in request.chunks)

@@ -40,5 +40,5 @@ def app():
 
 @pytest.fixture
 def client(app):
-    with TestClient(app, raise_server_exceptions=False) as test_client:
+    with TestClient(app, raise_server_exceptions=False, client=("127.0.0.1", 12345)) as test_client:
         yield test_client
