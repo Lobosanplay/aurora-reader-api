@@ -1,0 +1,31 @@
+from pydantic import ValidationError
+
+from app.api.errors import APIError, invalid_upstream
+from app.core.config import Settings
+from app.providers.base import AIProvider
+from app.schemas.question import QuestionRequest, QuestionResponse
+from app.services.context_service import ContextService
+
+
+class QuestionService:
+    def __init__(self, settings: Settings, provider: AIProvider | None) -> None:
+        self.settings = settings
+        self.provider = provider
+
+    async def answer(self, request: QuestionRequest) -> QuestionResponse:
+        context = request.context
+        if (
+            len(request.question) > self.settings.max_question_length
+            or len(context.related_chunks) > self.settings.max_related_chunks
+            or sum(map(len, [context.title, context.current_chunk, *context.related_chunks]))
+            > self.settings.max_context_chars
+        ):
+            raise APIError(413, "PAYLOAD_TOO_LARGE", "Question context exceeds configured limits.")
+        if self.provider is None:
+            raise APIError(503, "PROVIDER_UNAVAILABLE", "Inference provider is not configured.")
+        prepared = ContextService().prepare(context)
+        try:
+            result = await self.provider.answer(request.question, request.language, prepared)
+            return QuestionResponse.model_validate(result)
+        except (ValidationError, ValueError, TypeError) as exc:
+            raise invalid_upstream(exc) from None
