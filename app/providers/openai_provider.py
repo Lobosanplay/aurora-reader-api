@@ -3,6 +3,7 @@ import json
 
 from openai import (
     APIConnectionError,
+    APIResponseValidationError,
     APIStatusError,
     APITimeoutError,
     AsyncOpenAI,
@@ -35,6 +36,8 @@ class TranslationResult(StrictModel):
 def _map_error(exc: Exception) -> Exception:
     if isinstance(exc, APITimeoutError):
         return ProviderTimedOut()
+    if isinstance(exc, APIResponseValidationError):
+        return ProviderInvalidResponse()
     if isinstance(exc, RateLimitError):
         body = exc.body
         code = body.get("code") if isinstance(body, dict) else None
@@ -87,11 +90,20 @@ class OpenAIProvider:
                 reasoning={"effort": "none"},
                 store=False,
             )
-        except (APITimeoutError, APIStatusError, APIConnectionError) as exc:
+        except (
+            APITimeoutError,
+            APIStatusError,
+            APIConnectionError,
+            APIResponseValidationError,
+        ) as exc:
             raise _map_error(exc) from None
         except (ValidationError, ValueError, TypeError):
             raise ProviderInvalidResponse() from None
-        if response.status != "completed" or response.output_parsed is None:
+        try:
+            complete = response.status == "completed" and response.output_parsed is not None
+        except (AttributeError, ValueError, TypeError):
+            raise ProviderInvalidResponse() from None
+        if not complete:
             raise ProviderInvalidResponse()
         try:
             return model_type.model_validate(response.output_parsed)
@@ -147,7 +159,12 @@ class OpenAIProvider:
                     file=("recording.wav", buffer, "audio/wav"),
                     **kwargs,
                 )
-        except (APITimeoutError, APIStatusError, APIConnectionError) as exc:
+        except (
+            APITimeoutError,
+            APIStatusError,
+            APIConnectionError,
+            APIResponseValidationError,
+        ) as exc:
             raise _map_error(exc) from None
         try:
             detected = response.languages or []

@@ -128,7 +128,7 @@ def test_answer_provenance_and_untrusted_context():
     asyncio.run(run())
 
 
-def test_audio_hint_cleanup_and_invalid_output(monkeypatch):
+def test_audio_hint_cleanup_and_invalid_output():
     async def run():
         sdk = MockSDK()
         adapter = provider(sdk)
@@ -140,6 +140,10 @@ def test_audio_hint_cleanup_and_invalid_output(monkeypatch):
         assert sdk.audio_calls[-1]["file"][1].closed
         sdk.audio_result = SimpleNamespace(text="x" * 4001, languages=[])
         with pytest.raises(ProviderInvalidResponse):
+            await adapter.transcribe(WAV, "audio/wav", None)
+        assert sdk.audio_calls[-1]["file"][1].closed
+        sdk.audio_result = request_error(APITimeoutError)
+        with pytest.raises(ProviderTimedOut):
             await adapter.transcribe(WAV, "audio/wav", None)
         assert sdk.audio_calls[-1]["file"][1].closed
         sdk.audio_result = SimpleNamespace(text="", languages=[])
@@ -266,6 +270,13 @@ def test_incomplete_and_cancelled_calls():
         sdk = MockSDK()
         adapter = provider(sdk)
         sdk.parsed = None
+        with pytest.raises(ProviderInvalidResponse):
+            await adapter.answer("Q", "en", "Text")
+
+        async def incomplete(**kwargs):
+            return SimpleNamespace(status="incomplete", output_parsed={"answer": "Text"})
+
+        sdk.responses.parse = incomplete
         with pytest.raises(ProviderInvalidResponse):
             await adapter.answer("Q", "en", "Text")
 
