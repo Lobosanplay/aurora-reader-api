@@ -3,6 +3,7 @@ import io
 import json
 import wave
 from types import SimpleNamespace
+from typing import cast
 
 import httpx
 import pytest
@@ -10,10 +11,14 @@ from fastapi.testclient import TestClient
 from openai import (
     APIConnectionError,
     APITimeoutError,
+    AsyncOpenAI,
     AuthenticationError,
     BadRequestError,
     RateLimitError,
 )
+from openai.types.audio import Transcription
+from openai.types.audio.transcription_language import TranscriptionLanguage
+from pydantic import SecretStr
 
 from app.core.config import Settings
 from app.main import create_app
@@ -32,8 +37,10 @@ class MockSDK:
     def __init__(self):
         self.parse_calls = []
         self.audio_calls = []
-        self.parsed = None
-        self.audio_result = SimpleNamespace(text="Hola", languages=[SimpleNamespace(code="es")])
+        self.parsed: object | None = None
+        self.audio_result: Transcription | Exception | str = Transcription(
+            text="Hola", languages=[TranscriptionLanguage(code="es")]
+        )
         self.closed = False
 
         async def parse(**kwargs):
@@ -57,7 +64,15 @@ class MockSDK:
 
 
 def provider(sdk):
-    return OpenAIProvider(Settings(openai_api_key="test-only", ai_provider="openai"), client=sdk)
+    return OpenAIProvider(
+        Settings(openai_api_key=SecretStr("test-only"), ai_provider="openai"),
+        client=cast(AsyncOpenAI, sdk),
+    )
+
+
+def test_provider_requires_key_without_injected_client():
+    with pytest.raises(ValueError, match="server-side key"):
+        OpenAIProvider(Settings(ai_provider="openai"))
 
 
 def request_error(error_type, **kwargs):
@@ -138,7 +153,7 @@ def test_audio_hint_cleanup_and_invalid_output():
         assert sdk.audio_calls[-1]["languages"] == ["es"]
         assert sdk.audio_calls[-1]["model"] == "gpt-transcribe"
         assert sdk.audio_calls[-1]["file"][1].closed
-        sdk.audio_result = SimpleNamespace(text="x" * 4001, languages=[])
+        sdk.audio_result = Transcription(text="x" * 4001, languages=[])
         with pytest.raises(ProviderInvalidResponse):
             await adapter.transcribe(WAV, "audio/wav", None)
         assert sdk.audio_calls[-1]["file"][1].closed
@@ -146,7 +161,11 @@ def test_audio_hint_cleanup_and_invalid_output():
         with pytest.raises(ProviderTimedOut):
             await adapter.transcribe(WAV, "audio/wav", None)
         assert sdk.audio_calls[-1]["file"][1].closed
-        sdk.audio_result = SimpleNamespace(text="", languages=[])
+        sdk.audio_result = Transcription(text="", languages=[])
+        with pytest.raises(ProviderInvalidResponse):
+            await adapter.transcribe(WAV, "audio/wav", None)
+        assert sdk.audio_calls[-1]["file"][1].closed
+        sdk.audio_result = "unexpected response"
         with pytest.raises(ProviderInvalidResponse):
             await adapter.transcribe(WAV, "audio/wav", None)
         assert sdk.audio_calls[-1]["file"][1].closed
@@ -187,10 +206,10 @@ def test_lifespan_client_reuse_and_shutdown(monkeypatch):
     class FakeAdapter(OpenAIProvider):
         def __init__(self, settings):
             created.append(settings)
-            super().__init__(settings, client=sdk)
+            super().__init__(settings, client=cast(AsyncOpenAI, sdk))
 
     monkeypatch.setattr("app.main.OpenAIProvider", FakeAdapter)
-    app = create_app(Settings(ai_provider="openai", openai_api_key="test-only"))
+    app = create_app(Settings(ai_provider="openai", openai_api_key=SecretStr("test-only")))
     with TestClient(app, client=("127.0.0.1", 12345)) as client:
         assert app.state.provider is not None
         assert client.get("/health").json() == {"status": "ok"}
@@ -214,10 +233,10 @@ def test_real_adapter_wiring_offline(monkeypatch):
 
     class FakeAdapter(OpenAIProvider):
         def __init__(self, settings):
-            super().__init__(settings, client=sdk)
+            super().__init__(settings, client=cast(AsyncOpenAI, sdk))
 
     monkeypatch.setattr("app.main.OpenAIProvider", FakeAdapter)
-    app = create_app(Settings(ai_provider="openai", openai_api_key="test-only"))
+    app = create_app(Settings(ai_provider="openai", openai_api_key=SecretStr("test-only")))
     buffer = io.BytesIO()
     with wave.open(buffer, "wb") as recording:
         recording.setnchannels(1)

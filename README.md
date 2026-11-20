@@ -29,6 +29,7 @@ See [the proposed backend contract](docs/api-contract.md) for payloads and failu
 pytest -q
 ruff check .
 ruff format --check .
+pyright --pythonpath "$(command -v python)" app tests
 ```
 
 The [backend CI workflow](.github/workflows/ci.yml) runs these offline checks on pull requests

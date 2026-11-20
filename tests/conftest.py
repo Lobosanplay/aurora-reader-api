@@ -3,7 +3,7 @@ from fastapi.testclient import TestClient
 
 from app.core.config import Settings
 from app.main import create_app
-from app.schemas.question import QuestionResponse
+from app.schemas.question import AnswerSource, QuestionResponse
 from app.schemas.transcription import TranscriptionResponse
 from app.schemas.translation import TranslationChunk
 
@@ -17,10 +17,12 @@ class FakeProvider:
     async def answer(self, question: str, language: str, context: str) -> QuestionResponse:
         if not context:
             return QuestionResponse(
-                answer="Not enough page context.", source="insufficient", context_sufficient=False
+                answer="Not enough page context.",
+                source=AnswerSource.INSUFFICIENT,
+                context_sufficient=False,
             )
         return QuestionResponse(
-            answer=f"{language}: {context}", source="page", context_sufficient=True
+            answer=f"{language}: {context}", source=AnswerSource.PAGE, context_sufficient=True
         )
 
     async def transcribe(

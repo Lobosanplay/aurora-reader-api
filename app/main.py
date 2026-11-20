@@ -2,12 +2,14 @@ import asyncio
 import hmac
 import ipaddress
 from contextlib import asynccontextmanager
+from typing import Any, cast
 from uuid import uuid4
 
 from fastapi import FastAPI, Request
 from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
 from starlette.exceptions import HTTPException as StarletteHTTPException
+from starlette.types import HTTPExceptionHandler
 
 from app.api.errors import (
     APIError,
@@ -71,8 +73,10 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                     )
             else:
                 supplied = request.headers.get("X-Aurora-API-Key", "")
-                expected = settings.api_access_key.get_secret_value()
-                if not hmac.compare_digest(supplied.encode("utf-8"), expected.encode("utf-8")):
+                key = settings.api_access_key
+                if key is None or not hmac.compare_digest(
+                    supplied.encode("utf-8"), key.get_secret_value().encode("utf-8")
+                ):
                     return error_response(
                         request.state.request_id, 401, "UNAUTHORIZED", "Access denied."
                     )
@@ -113,12 +117,13 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         response.headers["X-Request-ID"] = request.state.request_id
         return response
 
-    app.add_exception_handler(APIError, api_error)
-    app.add_exception_handler(RequestValidationError, validation_error)
-    app.add_exception_handler(StarletteHTTPException, http_error)
+    # FastAPI dispatches by exception class; its handler type does not encode that pairing.
+    app.add_exception_handler(APIError, cast(HTTPExceptionHandler, api_error))
+    app.add_exception_handler(RequestValidationError, cast(HTTPExceptionHandler, validation_error))
+    app.add_exception_handler(StarletteHTTPException, cast(HTTPExceptionHandler, http_error))
     app.add_exception_handler(Exception, unexpected_error)
 
-    errors = {
+    errors: dict[int | str, dict[str, Any]] = {
         status: {"model": ErrorResponse}
         for status in (400, 401, 403, 413, 415, 422, 429, 500, 502, 503, 504)
     }

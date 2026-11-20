@@ -1,5 +1,6 @@
 import io
 import json
+from typing import TypeVar
 
 from openai import (
     APIConnectionError,
@@ -11,6 +12,7 @@ from openai import (
     BadRequestError,
     RateLimitError,
 )
+from openai.types.audio import Transcription
 from pydantic import ValidationError
 
 from app.core.config import Settings
@@ -31,6 +33,9 @@ from app.schemas.translation import TranslationChunk
 
 class TranslationResult(StrictModel):
     chunks: list[TranslationChunk]
+
+
+ParsedModel = TypeVar("ParsedModel", bound=StrictModel)
 
 
 def _map_error(exc: Exception) -> Exception:
@@ -65,21 +70,26 @@ class OpenAIProvider:
 
     def __init__(self, settings: Settings, client: AsyncOpenAI | None = None) -> None:
         self.settings = settings
-        self.client = client or AsyncOpenAI(
-            api_key=settings.openai_api_key.get_secret_value(),
-            timeout=settings.ai_request_timeout_seconds,
-            max_retries=0,
-        )
+        if client is None:
+            key = settings.openai_api_key
+            if key is None:
+                raise ValueError("OpenAI provider requires a server-side key")
+            client = AsyncOpenAI(
+                api_key=key.get_secret_value(),
+                timeout=settings.ai_request_timeout_seconds,
+                max_retries=0,
+            )
+        self.client = client
 
     async def close(self) -> None:
         await self.client.close()
 
     async def _parse(
         self,
-        model_type: type[TranslationResult] | type[QuestionResponse],
+        model_type: type[ParsedModel],
         policy: str,
-        payload: dict,
-    ):
+        payload: dict[str, object],
+    ) -> ParsedModel:
         try:
             response = await self.client.responses.parse(
                 model=self.settings.openai_text_model,
@@ -151,14 +161,21 @@ class OpenAIProvider:
         # The SDK accepts a (filename, bytes, MIME) tuple without writing a temporary file.
         if media_type != "audio/wav":
             raise ProviderInvalidResponse()
-        kwargs = {"languages": [language]} if language else {}
         try:
             with io.BytesIO(audio) as buffer:
-                response = await self.client.audio.transcriptions.create(
-                    model=self.settings.openai_transcription_model,
-                    file=("recording.wav", buffer, "audio/wav"),
-                    **kwargs,
-                )
+                if language:
+                    response = await self.client.audio.transcriptions.create(
+                        model=self.settings.openai_transcription_model,
+                        file=("recording.wav", buffer, "audio/wav"),
+                        languages=[language],
+                        response_format="json",
+                    )
+                else:
+                    response = await self.client.audio.transcriptions.create(
+                        model=self.settings.openai_transcription_model,
+                        file=("recording.wav", buffer, "audio/wav"),
+                        response_format="json",
+                    )
         except (
             APITimeoutError,
             APIStatusError,
@@ -166,6 +183,8 @@ class OpenAIProvider:
             APIResponseValidationError,
         ) as exc:
             raise _map_error(exc) from None
+        if not isinstance(response, Transcription):
+            raise ProviderInvalidResponse()
         try:
             detected = response.languages or []
             code = validate_language(detected[0].code) if len(detected) == 1 else None
