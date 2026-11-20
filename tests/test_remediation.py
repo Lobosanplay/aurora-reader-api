@@ -3,14 +3,16 @@ import io
 import logging
 import struct
 import wave
+from typing import cast
 
 import pytest
 from fastapi.testclient import TestClient
-from pydantic import ValidationError
+from pydantic import SecretStr, ValidationError
 
 from app.core.config import Settings
 from app.core.rate_limit import RateLimiter
 from app.main import create_app
+from app.providers.base import AIProvider
 from app.providers.errors import (
     ProviderInvalidResponse,
     ProviderQuotaExceeded,
@@ -64,7 +66,7 @@ def test_local_only_and_production_fail_closed():
         Settings(
             deployment_mode="production",
             trusted_gateway_enabled=True,
-            api_access_key="a" * 32,
+            api_access_key=SecretStr("a" * 32),
         )
     with TestClient(
         create_app(Settings()),
@@ -82,7 +84,7 @@ def test_production_auth_direct_requests_and_no_secret_disclosure():
     settings = Settings(
         deployment_mode="production",
         trusted_gateway_enabled=True,
-        api_access_key=key,
+        api_access_key=SecretStr(key),
         allowed_origins=["https://app.example"],
     )
     with local_client(settings) as client:
@@ -372,7 +374,7 @@ def test_provider_cancel_releases_capacity():
                     cancelled.set()
 
         semaphore = asyncio.Semaphore(1)
-        bounded = BoundedProvider(Provider(), Settings(), semaphore)
+        bounded = BoundedProvider(cast(AIProvider, Provider()), Settings(), semaphore)
         task = asyncio.create_task(bounded.answer("Q", "en", "context"))
         await started.wait()
         task.cancel()

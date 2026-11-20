@@ -2,9 +2,12 @@
 
 The API does not intentionally persist user page text, questions, transcripts or recordings.
 The multipart parser may spool large uploads to temporary storage; upload resources are closed
-after the request. No content-bearing application logs are emitted. Provider adapters must avoid
-logging prompts/audio and document the third party's processing and retention terms before
-deployment. No provider is enabled in this phase.
+after the request. When explicitly enabled, the OpenAI adapter sends selected page/question
+text or a short validated WAV to OpenAI. Application code does not log prompts, transcripts or
+audio; text calls set `store=false`, and transcription uses a short-lived in-memory buffer.
+`store=false` is not a zero-retention guarantee. Review vendor retention, abuse monitoring,
+residency, SDK/network telemetry and infrastructure logs before sending real user content. The
+default provider is disabled and requires a backend-only key to activate.
 
 Only explicitly configured origins are allowed by CORS, but CORS does not stop non-browser
 clients. Local mode rejects non-loopback ASGI peers; do not proxy local mode publicly.
@@ -16,5 +19,6 @@ deployment, deploy and verify a trusted gateway with user/session authentication
 rate and cost quotas, HTTPS, backend network isolation and operational monitoring. Do not set
 `TRUSTED_GATEWAY_ENABLED` without such a gateway. Avoid recording gateway keys in access logs.
 Review proxy upload limits and extension origins, including published extension IDs. Treat all
-supplied page text as untrusted. Application provider diagnostics log only an opaque request ID
+supplied page text as untrusted. Source labels are structurally checked, not factual proof.
+Application provider diagnostics log only an opaque request ID
 and a fixed error category; infrastructure logging and third-party retention need separate review.
