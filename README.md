@@ -31,6 +31,17 @@ ruff check .
 ruff format --check .
 ```
 
+The [backend CI workflow](.github/workflows/ci.yml) runs these offline checks on pull requests
+and pushes to `main` with Python 3.12 and 3.14. The tests use provider fakes; passing CI does
+not demonstrate live inference or frontend integration.
+
+ECC Tools reports about an absent ECC manifest in `AGENTS.md`, missing evaluator/reference
+corpora, or harness drift are advisory for this repository: it is the Aurora Reader backend, not
+the ECC Tools source repository. Do not add unrelated ECC fixtures or an undocumented manifest
+just to silence those reports. If ECC check publication says it was denied or unavailable, a
+GitHub App owner must enable **Checks: read and write** and the installation owner must approve
+the permission update; this cannot be fixed by changing this repository's workflow permissions.
+
 Configuration uses environment variables (see `.env.example`); Pydantic Settings also loads
 an ignored local `.env`. `AI_PROVIDER=unconfigured` is the only supported value in this phase.
 Do not place a provider key in the extension or assume setting OpenAI variables enables inference.
