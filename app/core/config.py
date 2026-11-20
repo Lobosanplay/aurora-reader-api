@@ -31,7 +31,7 @@ class Settings(BaseSettings):
     max_wav_duration_seconds: int = Field(60, ge=1, le=600)
     max_json_bytes: int = Field(100_000, ge=1024, le=2_000_000)
     ai_request_timeout_seconds: float = Field(30, gt=0, le=120)
-    max_response_tokens: int = Field(600, ge=1, le=4096)
+    max_response_tokens: int = Field(600, ge=1, le=16_384)
     max_answer_chars: int = Field(2000, ge=1, le=20_000)
     max_transcript_chars: int = Field(4000, ge=1, le=50_000)
     max_concurrent_provider_requests: int = Field(4, ge=1, le=100)

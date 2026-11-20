@@ -1,6 +1,7 @@
 import asyncio
 import hmac
 import ipaddress
+from contextlib import asynccontextmanager
 from uuid import uuid4
 
 from fastapi import FastAPI, Request
@@ -19,12 +20,27 @@ from app.api.errors import (
 from app.api.routes import questions, transcription, translate
 from app.core.config import Settings, get_settings
 from app.core.rate_limit import RateLimiter
+from app.providers.openai_provider import OpenAIProvider
 from app.schemas.common import ErrorResponse
 
 
 def create_app(settings: Settings | None = None) -> FastAPI:
     settings = settings or get_settings()
-    app = FastAPI(title="Aurora Reader API", version="0.1.0")
+
+    @asynccontextmanager
+    async def lifespan(application: FastAPI):
+        if settings.ai_provider == "openai" and settings.openai_api_key is not None:
+            provider = OpenAIProvider(settings)
+            application.state.provider = provider
+            try:
+                yield
+            finally:
+                application.state.provider = None
+                await provider.close()
+        else:
+            yield
+
+    app = FastAPI(title="Aurora Reader API", version="0.1.0", lifespan=lifespan)
     app.state.settings = settings
     app.state.provider = None
     app.state.semaphore = asyncio.Semaphore(settings.max_concurrent_provider_requests)
