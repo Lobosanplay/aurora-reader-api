@@ -10,7 +10,10 @@ from app.schemas.common import validate_language
 class Settings(BaseSettings):
     model_config = SettingsConfigDict(env_file=".env", extra="ignore")
 
-    ai_provider: Literal["unconfigured"] = "unconfigured"
+    ai_provider: Literal["unconfigured", "openai"] = "unconfigured"
+    openai_api_key: SecretStr | None = None
+    openai_text_model: str = Field("gpt-6.1-terra", min_length=1)
+    openai_transcription_model: str = Field("gpt-transcribe", min_length=1)
     deployment_mode: Literal["local", "production"] = "local"
     trusted_gateway_enabled: bool = False
     api_access_key: SecretStr | None = None
@@ -35,6 +38,8 @@ class Settings(BaseSettings):
 
     @model_validator(mode="after")
     def deployment_safety(self) -> "Settings":
+        if not self.openai_text_model.strip() or not self.openai_transcription_model.strip():
+            raise ValueError("Model names must not be blank")
         self.supported_languages = [validate_language(tag) for tag in self.supported_languages]
         if len(set(self.supported_languages)) != len(self.supported_languages):
             raise ValueError("Duplicate supported languages")
