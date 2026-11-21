@@ -34,7 +34,8 @@ pyright --pythonpath "$(command -v python)" app tests
 
 The [backend CI workflow](.github/workflows/ci.yml) runs these offline checks on pull requests
 and pushes to `main` with Python 3.12 and 3.14. The tests use provider fakes; passing CI does
-not demonstrate live inference or frontend integration.
+not demonstrate live inference or frontend integration. See [CI failure modes](docs/ci-troubleshooting.md)
+for reproducible checks and ownership of external check-publication failures.
 
 ECC Tools reports about an absent ECC manifest in `AGENTS.md`, missing evaluator/reference
 corpora, or harness drift are advisory for this repository: it is the Aurora Reader backend, not
