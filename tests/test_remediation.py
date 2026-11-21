@@ -187,6 +187,12 @@ def test_empty_context_cannot_be_attributed_to_page_and_answer_boundary():
         assert client.post("/api/v1/ask", json=QUESTION).status_code == 200
         response = client.post("/api/v1/ask", json=QUESTION | {"context": {}})
         check_error(response, 502, "BAD_UPSTREAM_RESPONSE")
+        response = client.post("/api/v1/ask", json=QUESTION | {"context": {"title": "Only title"}})
+        check_error(response, 502, "BAD_UPSTREAM_RESPONSE")
+        response = client.post(
+            "/api/v1/ask", json=QUESTION | {"context": {"related_chunks": ["  ", "Actual excerpt"]}}
+        )
+        assert response.status_code == 200
 
 
 @pytest.mark.parametrize(

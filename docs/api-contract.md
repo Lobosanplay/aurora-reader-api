@@ -52,7 +52,8 @@ proposed v1 vocabulary: `page`, `general`, `insufficient`, `external`, `mixed`; 
 `external` and `mixed`** without approved retrieval. `context_sufficient` is true only for `page`.
 `general` must identify general model knowledge, not claim that knowledge comes from the page;
 `insufficient` indicates no supported answer. The requested language is passed to the provider.
-`page` without any usable supplied context is rejected as `502`. This structural rule does not
+`page` without a nonblank current or related excerpt (including title-only context) is rejected
+as `502`. This structural rule does not
 verify factual grounding or prove resistance to prompt injection; evaluate real adapters separately.
 Answers are limited to 2,000 characters by default and oversized provider results fail `502`,
 not silently truncate.
