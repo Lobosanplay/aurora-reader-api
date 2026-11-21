@@ -260,6 +260,34 @@ def test_translation_combined_limit_and_normalized_configured_languages():
         )
 
 
+def test_translation_output_limits_reject_provider_expansion():
+    class Provider:
+        def __init__(self, texts):
+            self.texts = texts
+
+        async def translate(self, *args):
+            return [
+                {"id": chunk_id, "text": text}
+                for chunk_id, text in zip(("a", "b"), self.texts, strict=True)
+            ]
+
+    settings = Settings(max_chunk_length=5, max_translation_chars=8)
+    with local_client(settings, Provider(["Uno", "Dos"])) as client:
+        assert client.post("/api/v1/translate", json=TRANSLATION).status_code == 200
+    with local_client(settings, Provider(["Muchoo", "Dos"])) as client:
+        check_error(
+            client.post("/api/v1/translate", json=TRANSLATION),
+            502,
+            "BAD_UPSTREAM_RESPONSE",
+        )
+    with local_client(settings, Provider(["Cuat", "Cinco"])) as client:
+        check_error(
+            client.post("/api/v1/translate", json=TRANSLATION),
+            502,
+            "BAD_UPSTREAM_RESPONSE",
+        )
+
+
 def test_audio_rejection_and_no_provider_invocation():
     calls = []
 

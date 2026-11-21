@@ -22,6 +22,8 @@ JSON response (illustrative output; live inference not yet verified):
 One or more chunks, maximum 20; ID is 1–100 ASCII letters/digits/underscore/hyphen, unique
 per request; nonblank text maximum 4,000 characters/chunk and 20,000 combined. Translation
 preserves count, IDs and order; malformed provider results fail rather than being repaired.
+Provider translations that exceed the configured per-chunk or combined character limits fail
+`502 BAD_UPSTREAM_RESPONSE`, rather than returning unbounded expanded text.
 Same-language requests return unchanged text/IDs without a provider after access, rate and
 language checks. Different languages use the optional configured OpenAI adapter or return `503`
 when disabled/missing a key. Incomplete structured output or mismatched IDs fail `502`; the
