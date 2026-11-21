@@ -13,7 +13,7 @@ gateway-only `X-Aurora-API-Key`, never a key embedded in the extension):
 {"source_language":"en","target_language":"es","chunks":[{"id":"chunk-001","text":"Neural networks learn patterns."}]}
 ```
 
-JSON response (provider-dependent translation shown illustratively, not currently available):
+JSON response (illustrative output; live inference not yet verified):
 
 ```json
 {"source_language":"en","target_language":"es","chunks":[{"id":"chunk-001","text":"Las redes neuronales aprenden patrones."}]}
@@ -22,8 +22,12 @@ JSON response (provider-dependent translation shown illustratively, not currentl
 One or more chunks, maximum 20; ID is 1–100 ASCII letters/digits/underscore/hyphen, unique
 per request; nonblank text maximum 4,000 characters/chunk and 20,000 combined. Translation
 preserves count, IDs and order; malformed provider results fail rather than being repaired.
+Provider translations that exceed the configured per-chunk or combined character limits fail
+`502 BAD_UPSTREAM_RESPONSE`, rather than returning unbounded expanded text.
 Same-language requests return unchanged text/IDs without a provider after access, rate and
-language checks. Different languages currently return `503` (no adapter). Input text is
+language checks. Different languages use the optional configured OpenAI adapter or return `503`
+when disabled/missing a key. Incomplete structured output or mismatched IDs fail `502`; the
+default 600-token text output budget may be too small for long translations. Input text is
 document data, never executable instructions.
 
 ## `POST /api/v1/ask`
@@ -50,12 +54,14 @@ proposed v1 vocabulary: `page`, `general`, `insufficient`, `external`, `mixed`; 
 `external` and `mixed`** without approved retrieval. `context_sufficient` is true only for `page`.
 `general` must identify general model knowledge, not claim that knowledge comes from the page;
 `insufficient` indicates no supported answer. The requested language is passed to the provider.
-`page` without any usable supplied context is rejected as `502`. This structural rule does not
+`page` without a nonblank current or related excerpt (including title-only context) is rejected
+as `502`. This structural rule does not
 verify factual grounding or prove resistance to prompt injection; evaluate real adapters separately.
 Answers are limited to 2,000 characters by default and oversized provider results fail `502`,
 not silently truncate.
-Page context is always untrusted data; the backend does not fetch URLs. No live answer adapter exists
-in this phase; requests return `503`.
+Page context is always untrusted data; the backend does not fetch URLs. With OpenAI enabled,
+structured results are validated, but a source label is not proof of factual grounding.
+Requests without an enabled provider/key return `503`.
 
 ## `POST /api/v1/transcribe`
 
@@ -73,8 +79,12 @@ WebM currently fail `415` pending reliable codec, duration and integrity validat
 a deliberate change from the earlier proposed acceptance. Maximum audio content
 is 5,000,000 bytes; PCM WAV duration is limited to 60 seconds; request transport max is
 5,065,536 bytes. Empty or malformed WAV files fail `400`; unsupported media/codec fails `415`.
-Provider transcripts over 4,000 characters fail `502`. Uploaded files are closed after processing. No
-transcription happens without a provider (returns `503`).
+Provider transcripts over 4,000 characters, blank text and invalid detected language tags fail
+`502`. The `gpt-transcribe` file API accepts WAV; when no single detected language is available,
+the result language is null. Regional hints except `zh-CN`, `zh-TW`, `zh-HK` fail
+`422 UNSUPPORTED_LANGUAGE` with this adapter. Other syntactically accepted tags are not
+guaranteed supported. Uploaded files are closed; the SDK receives a short-lived in-memory
+buffer. Without an enabled provider/key, transcription returns `503`.
 
 ## Shared validation, errors and operations
 
@@ -107,7 +117,7 @@ Failures have the shape:
 | 429 | `PROVIDER_RATE_LIMITED` | Upstream provider throttling (when enabled) |
 | 502 | `BAD_UPSTREAM_RESPONSE` | Provider output failed validation |
 | 502 | `PROVIDER_FAILURE` | Unexpected adapter failure |
-| 503 | `PROVIDER_UNAVAILABLE` | No provider or temporarily unavailable upstream |
+| 503 | `PROVIDER_UNAVAILABLE` | No provider/key, invalid provider credentials/configuration, or unavailable upstream |
 | 503 | `PROVIDER_QUOTA_EXCEEDED` | Upstream provider quota exhausted (when enabled) |
 | 504 | `PROVIDER_TIMEOUT` | Provider operation exceeded deadline |
 | 500 | `INTERNAL_ERROR` | Unexpected server error |
@@ -121,10 +131,20 @@ requires separate user/session authentication at a trusted gateway, backend netw
 TLS and distributed rate/cost quotas. Process-local per-peer rate limiting defaults to 60 requests
 per 60 seconds and does not use client-supplied forwarding headers. Concurrency is capped at
 four provider operations/process; the 30-second timeout includes waiting for capacity. A
-future adapter must honor the configured 600-token output budget and upstream spending controls;
-character ceilings are enforced separately. No automatic provider retries. Client disconnect
+text adapter honors the configured 600-token output budget (configurable up to 16,384);
+character ceilings are enforced separately. No automatic SDK retries. Client disconnect
 cancellation is best-effort; it cannot guarantee avoiding provider charges. Diagnostic logs contain
 only request ID and fixed failure category, not prompts, transcripts, audio or credentials.
+The shared async SDK client uses the configured 30-second timeout and closes at shutdown.
+The file-transcription endpoint does not expose a documented output-token cap; the backend checks
+transcript characters after the call. Text requests set `store=false`, which is not a provider
+zero-retention guarantee.
+
+Default models: `gpt-6.1-terra` for text (documented Responses structured outputs; $1/1M input
+and $5/1M output tokens in reviewed pricing) and `gpt-transcribe` for file audio (documented
+WAV support; $0.0045/minute in reviewed pricing). Pricing, account availability and quotas can
+change. Provider documentation does not guarantee comprehensive text language quality; configure
+`SUPPORTED_LANGUAGES` to an operator-tested list. Offline SDK mocks are not a live test.
 
 ## Frontend integration/migration (not yet implemented)
 

@@ -37,6 +37,11 @@ class TranslationService:
                 for original, translated in zip(request.chunks, checked, strict=True)
             ):
                 raise ValueError("Nonmatching translation chunks")
+            if (
+                any(len(chunk.text) > self.settings.max_chunk_length for chunk in checked)
+                or sum(len(chunk.text) for chunk in checked) > self.settings.max_translation_chars
+            ):
+                raise ValueError("Translation exceeds output limits")
         except (ValidationError, ValueError, TypeError) as exc:
             raise invalid_upstream(exc) from None
         return TranslationResponse(

@@ -31,8 +31,11 @@ class QuestionService:
             checked = QuestionResponse.model_validate(result)
             if len(checked.answer) > self.settings.max_answer_chars:
                 raise ValueError("Answer exceeds output budget")
-            if checked.source.value == "page" and not prepared:
-                raise ValueError("Page attribution requires page context")
+            if checked.source.value == "page" and not (
+                context.current_chunk.strip()
+                or any(chunk.strip() for chunk in context.related_chunks)
+            ):
+                raise ValueError("Page attribution requires an excerpt")
             return checked
         except (ValidationError, ValueError, TypeError) as exc:
             raise invalid_upstream(exc) from None

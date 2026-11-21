@@ -58,5 +58,5 @@ async def unexpected_error(request: Request, exc: Exception) -> JSONResponse:
     return error_response(request.state.request_id, 500, "INTERNAL_ERROR", "Internal server error.")
 
 
-def invalid_upstream(exc: ValidationError | ValueError) -> APIError:
+def invalid_upstream(exc: ValidationError | ValueError | TypeError) -> APIError:
     return APIError(502, "BAD_UPSTREAM_RESPONSE", "Provider returned an invalid response.")

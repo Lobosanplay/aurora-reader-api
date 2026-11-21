@@ -3,14 +3,16 @@ import io
 import logging
 import struct
 import wave
+from typing import cast
 
 import pytest
 from fastapi.testclient import TestClient
-from pydantic import ValidationError
+from pydantic import SecretStr, ValidationError
 
 from app.core.config import Settings
 from app.core.rate_limit import RateLimiter
 from app.main import create_app
+from app.providers.base import AIProvider
 from app.providers.errors import (
     ProviderInvalidResponse,
     ProviderQuotaExceeded,
@@ -64,7 +66,7 @@ def test_local_only_and_production_fail_closed():
         Settings(
             deployment_mode="production",
             trusted_gateway_enabled=True,
-            api_access_key="a" * 32,
+            api_access_key=SecretStr("a" * 32),
         )
     with TestClient(
         create_app(Settings()),
@@ -82,7 +84,7 @@ def test_production_auth_direct_requests_and_no_secret_disclosure():
     settings = Settings(
         deployment_mode="production",
         trusted_gateway_enabled=True,
-        api_access_key=key,
+        api_access_key=SecretStr(key),
         allowed_origins=["https://app.example"],
     )
     with local_client(settings) as client:
@@ -185,6 +187,12 @@ def test_empty_context_cannot_be_attributed_to_page_and_answer_boundary():
         assert client.post("/api/v1/ask", json=QUESTION).status_code == 200
         response = client.post("/api/v1/ask", json=QUESTION | {"context": {}})
         check_error(response, 502, "BAD_UPSTREAM_RESPONSE")
+        response = client.post("/api/v1/ask", json=QUESTION | {"context": {"title": "Only title"}})
+        check_error(response, 502, "BAD_UPSTREAM_RESPONSE")
+        response = client.post(
+            "/api/v1/ask", json=QUESTION | {"context": {"related_chunks": ["  ", "Actual excerpt"]}}
+        )
+        assert response.status_code == 200
 
 
 @pytest.mark.parametrize(
@@ -249,6 +257,34 @@ def test_translation_combined_limit_and_normalized_configured_languages():
             client.post("/api/v1/translate", json=request | {"source_language": "invalid-tag-4"}),
             422,
             "INVALID_INPUT",
+        )
+
+
+def test_translation_output_limits_reject_provider_expansion():
+    class Provider:
+        def __init__(self, texts):
+            self.texts = texts
+
+        async def translate(self, *args):
+            return [
+                {"id": chunk_id, "text": text}
+                for chunk_id, text in zip(("a", "b"), self.texts, strict=True)
+            ]
+
+    settings = Settings(max_chunk_length=5, max_translation_chars=8)
+    with local_client(settings, Provider(["Uno", "Dos"])) as client:
+        assert client.post("/api/v1/translate", json=TRANSLATION).status_code == 200
+    with local_client(settings, Provider(["Muchoo", "Dos"])) as client:
+        check_error(
+            client.post("/api/v1/translate", json=TRANSLATION),
+            502,
+            "BAD_UPSTREAM_RESPONSE",
+        )
+    with local_client(settings, Provider(["Cuat", "Cinco"])) as client:
+        check_error(
+            client.post("/api/v1/translate", json=TRANSLATION),
+            502,
+            "BAD_UPSTREAM_RESPONSE",
         )
 
 
@@ -372,7 +408,7 @@ def test_provider_cancel_releases_capacity():
                     cancelled.set()
 
         semaphore = asyncio.Semaphore(1)
-        bounded = BoundedProvider(Provider(), Settings(), semaphore)
+        bounded = BoundedProvider(cast(AIProvider, Provider()), Settings(), semaphore)
         task = asyncio.create_task(bounded.answer("Q", "en", "context"))
         await started.wait()
         task.cancel()
