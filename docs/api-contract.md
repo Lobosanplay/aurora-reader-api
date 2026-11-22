@@ -1,6 +1,11 @@
-# Aurora Reader API — proposed backend v1 contract
+# Aurora Reader API — implemented backend v1 contract
 
-Status: implemented **backend proposal**, not synchronized with the extension. Base URL in local
+Status: implemented server contract aligned in documentation with
+`../aurora-reader-extension/docs/api-contract.md`; **browser integration is not implemented**.
+The FastAPI routes, Pydantic schemas and runtime guards are authoritative. Generated
+`/openapi.json` confirms `POST /api/v1/translate`, `POST /api/v1/ask`,
+`POST /api/v1/transcribe` and `GET /health`; it does not capture every runtime size limit,
+audio byte check or access guard. Base URL in local
 development: `http://localhost:8000`; production must use HTTPS. OpenAPI: `/openapi.json`,
 interactive docs: `/docs`. Only the three routes below are inference endpoints.
 
@@ -19,7 +24,8 @@ JSON response (illustrative output; live inference not yet verified):
 {"source_language":"en","target_language":"es","chunks":[{"id":"chunk-001","text":"Las redes neuronales aprenden patrones."}]}
 ```
 
-One or more chunks, maximum 20; ID is 1–100 ASCII letters/digits/underscore/hyphen, unique
+One or more chunks, maximum 20; ID is 1–100 ASCII letters/digits/underscore/hyphen
+(`^[A-Za-z0-9_-]+$`), unique
 per request; nonblank text maximum 4,000 characters/chunk and 20,000 combined. Translation
 preserves count, IDs and order; malformed provider results fail rather than being repaired.
 Provider translations that exceed the configured per-chunk or combined character limits fail
@@ -95,6 +101,8 @@ a claim about provider capabilities. Selected adapters must still verify real la
 Unknown JSON properties are rejected. JSON request bodies
 have a 100,000-byte transport cap; compressed request bodies are not accepted. All `POST` responses
 are typed in OpenAPI. `/health` returns `{"status":"ok"}` even if inference is unavailable.
+Missing multipart parts, invalid JSON and unknown JSON fields yield `422 INVALID_INPUT`.
+Unknown routes yield `404 NOT_FOUND`; unsupported methods yield `405 INVALID_INPUT`.
 
 Failures have the shape:
 
@@ -121,6 +129,8 @@ Failures have the shape:
 | 503 | `PROVIDER_QUOTA_EXCEEDED` | Upstream provider quota exhausted (when enabled) |
 | 504 | `PROVIDER_TIMEOUT` | Provider operation exceeded deadline |
 | 500 | `INTERNAL_ERROR` | Unexpected server error |
+| 404 | `NOT_FOUND` | Unknown route |
+| 405 | `INVALID_INPUT` | Unsupported method |
 
 `DEPLOYMENT_MODE=local` (default) permits inference routes only for loopback ASGI peers.
 `DEPLOYMENT_MODE=production` fails startup without `TRUSTED_GATEWAY_ENABLED=true`, a server-side
@@ -148,16 +158,31 @@ change. Provider documentation does not guarantee comprehensive text language qu
 
 ## Frontend integration/migration (not yet implemented)
 
-The extension's `docs/api-contract.md` currently says shapes and errors are not agreed and there
-is no `src/types/api.ts` or `src/services/api-client.ts`. Before integration, ratify this proposal
-and limits in that contract. Add types for `TranslationChunk/Request/Response`,
-`QuestionContext/Request/Response`, `AnswerSource`, `TranscriptionResponse` and the error envelope
-to `src/types/api.ts`. Implement JSON and multipart requests, runtime validation, request
-cancellation and error-code handling in `src/services/api-client.ts`. Convert the extension's
-`TextChunk` (`originalText`, `index`) to `{id,text}` and map returned chunks back by stable ID,
-never by implicit position alone. The extension must provide consent before text/audio upload,
-manage its own playback/microphone state, configure the public `VITE_API_BASE_URL` and origin
-permission, and never receive provider secrets. Cross-repository end-to-end compatibility is not
-verified.
-The extension must also choose supported PCM WAV recording (not Ogg/WebM), normalize tags, handle
-`401`/`403`/`429` and `UNSUPPORTED_LANGUAGE`, and never send a gateway key from browser code.
+The extension extracts ordered `TextChunk` records (`id`, `index`, `originalText`, optional unused
+`translatedText`) after toolbar activation and speaks source text locally. There is no API
+client, microphone, target-language selector, upload consent flow or translation cache. Only
+`activeTab` and `scripting` are permitted. See the extension contract for TypeScript DTO examples
+and the full future-consumer plan.
+
+Map `originalText` to request `text` in `index` order, validate ID syntax before sending, and
+only apply response `text` to matching `translatedText` after checking count, ID order, response
+languages and active document/operation. An undeclared page language requires an explicit source
+tag strategy; translated speech must use the target tag. Batch within server limits without
+dropping text. No server-side reading cursor or translation cache exists. For questions, send
+only consented title/current excerpt and up to five related excerpts; render `page`, `general`
+and `insufficient` honestly. Source labels are not factual proof. For transcription, capture
+or convert to bounded PCM WAV; browser WebM/Ogg cannot be sent through or renamed WAV.
+The API returns text, never playback commands. Stop/navigation must abort and ignore stale
+responses; provider cancellation is best-effort.
+
+The user deliberately initiates the action, sees what page excerpt or microphone audio leaves
+the browser, and grants explicit consent **before upload**. The extension sends only necessary
+data, not hidden/form content or unrelated pages. The backend validates input and invokes the
+configured provider; application code does not intentionally persist page text, transcripts or
+audio, though multipart parsing may spool and vendor retention requires review. Both sides treat
+webpage text as untrusted and avoid sensitive logs. Public browser-to-gateway authentication is
+an unresolved deployment decision; CORS is not authorization. Local mode requires a loopback
+ASGI peer. Configure the public `VITE_API_BASE_URL`, narrow extension host permission and actual
+extension origin in `ALLOWED_ORIGINS` as appropriate. Never expose the server-held
+`X-Aurora-API-Key` or provider credentials to the extension. Cross-repository end-to-end
+compatibility and live inference remain unverified.
