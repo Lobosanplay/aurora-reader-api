@@ -15,3 +15,7 @@ class AIProvider(Protocol):
     async def transcribe(
         self, audio: bytes, media_type: str, language: str | None
     ) -> TranscriptionResponse: ...
+
+
+class ManagedAIProvider(AIProvider, Protocol):
+    async def close(self) -> None: ...

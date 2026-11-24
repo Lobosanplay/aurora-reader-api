@@ -8,6 +8,12 @@ from app.schemas.transcription import TranscriptionResponse
 from app.schemas.translation import TranslationChunk
 
 
+@pytest.fixture(autouse=True)
+def isolate_local_settings_file(monkeypatch):
+    # Unit tests must never pick up a developer's ignored .env or paid credentials.
+    monkeypatch.setattr(Settings, "model_config", {**Settings.model_config, "env_file": None})
+
+
 class FakeProvider:
     async def translate(
         self, chunks: list[TranslationChunk], source_language: str, target_language: str

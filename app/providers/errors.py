@@ -20,3 +20,7 @@ class ProviderTimedOut(ProviderError):
 
 class ProviderInvalidResponse(ProviderError):
     pass
+
+
+class ProviderUnsupportedLanguage(ProviderError):
+    pass

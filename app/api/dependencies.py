@@ -12,6 +12,7 @@ from app.providers.errors import (
     ProviderRateLimited,
     ProviderTimedOut,
     ProviderUnavailable,
+    ProviderUnsupportedLanguage,
 )
 from app.schemas.question import QuestionResponse
 from app.schemas.transcription import TranscriptionResponse
@@ -55,6 +56,8 @@ class BoundedProvider:
             raise APIError(
                 502, "BAD_UPSTREAM_RESPONSE", "Provider returned an invalid response."
             ) from None
+        except ProviderUnsupportedLanguage:
+            raise APIError(422, "UNSUPPORTED_LANGUAGE", "Language hint is not supported.") from None
         except ProviderUnavailable:
             logger.warning("provider_failure request_id=%s category=unavailable", self.request_id)
             raise APIError(503, "PROVIDER_UNAVAILABLE", "Inference provider unavailable.") from None

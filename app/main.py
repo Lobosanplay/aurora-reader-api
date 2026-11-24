@@ -22,7 +22,7 @@ from app.api.errors import (
 from app.api.routes import questions, transcription, translate
 from app.core.config import Settings, get_settings
 from app.core.rate_limit import RateLimiter
-from app.providers.openai_provider import OpenAIProvider
+from app.providers.factory import create_provider
 from app.schemas.common import ErrorResponse
 
 
@@ -31,8 +31,8 @@ def create_app(settings: Settings | None = None) -> FastAPI:
 
     @asynccontextmanager
     async def lifespan(application: FastAPI):
-        if settings.ai_provider == "openai" and settings.openai_api_key is not None:
-            provider = OpenAIProvider(settings)
+        provider = create_provider(settings)
+        if provider is not None:
             application.state.provider = provider
             try:
                 yield

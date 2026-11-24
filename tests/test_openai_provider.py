@@ -208,7 +208,7 @@ def test_lifespan_client_reuse_and_shutdown(monkeypatch):
             created.append(settings)
             super().__init__(settings, client=cast(AsyncOpenAI, sdk))
 
-    monkeypatch.setattr("app.main.OpenAIProvider", FakeAdapter)
+    monkeypatch.setattr("app.providers.factory.OpenAIProvider", FakeAdapter)
     app = create_app(Settings(ai_provider="openai", openai_api_key=SecretStr("test-only")))
     with TestClient(app, client=("127.0.0.1", 12345)) as client:
         assert app.state.provider is not None
@@ -235,7 +235,7 @@ def test_real_adapter_wiring_offline(monkeypatch):
         def __init__(self, settings):
             super().__init__(settings, client=cast(AsyncOpenAI, sdk))
 
-    monkeypatch.setattr("app.main.OpenAIProvider", FakeAdapter)
+    monkeypatch.setattr("app.providers.factory.OpenAIProvider", FakeAdapter)
     app = create_app(Settings(ai_provider="openai", openai_api_key=SecretStr("test-only")))
     buffer = io.BytesIO()
     with wave.open(buffer, "wb") as recording:
