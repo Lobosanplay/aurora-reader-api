@@ -6,13 +6,16 @@ services. `app/services/` enforces semantic limits, provenance and chunk invaria
 `app/providers/base.py` defines the replaceable async protocol. `app/api/dependencies.py`
 wraps any injected provider with a request deadline and shared per-process concurrency cap.
 Without a provider, inference fails explicitly; identity translation remains available.
-`app/providers/openai_provider.py` uses one lifespan-managed `AsyncOpenAI` client when
-`AI_PROVIDER=openai` and a backend-only key is set. Text uses Responses structured parsing,
-separate trusted instructions and JSON-encoded untrusted data, `store=false`, no tools, no SDK
-retries, and a bounded output-token budget. Services recheck IDs/order and provenance. Audio
-uses an in-memory WAV buffer. Without credentials no SDK client is started. Tests use offline
-fakes; no database, browsing or server-side reading session is used. Model-level grounding and
-prompt-injection resistance are not established by structural tests alone.
+`app/providers/factory.py` constructs only the selected OpenAI or Gemini adapter when that
+provider's backend-only key is set and closes its client at shutdown. Both implement
+`app/providers/base.py` without changing routes or services. OpenAI uses Responses structured
+parsing and in-memory WAV transcription; Gemini uses structured JSON text output and inline-WAV
+transcription, without remote Files API uploads. Both separate trusted instructions from
+JSON-encoded untrusted text, request `store=false`, enable no retrieval tools or SDK retries,
+and bound text output tokens. Services recheck IDs/order and provenance. No automatic fallback
+sends private data to a different vendor. Tests use offline fakes; no database, browsing or
+server-side reading session is used. Model-level grounding and prompt-injection resistance are
+not established by structural tests alone.
 
 `app/main.py` gates local inference requests by loopback peer; production startup requires a
 gateway assertion and a server-held gateway key. Authentication occurs before body buffering.
@@ -25,5 +28,5 @@ error category. The provider protocol remains asynchronous and vendor-neutral.
 Question context labels the untrusted title and deduplicates excerpts before inference. The
 service rejects `page` attribution without usable context, but factual grounding cannot be
 proven by this structural check. Answer/transcript character ceilings apply independently of
-the text adapter's token budget. The file-transcription API has no documented output-token
-parameter; the backend checks transcript size after inference.
+the text adapter's token budget. The transcription adapters check transcript size after inference;
+Gemini returns null for detected language rather than guessing from a plain-text response.

@@ -31,8 +31,8 @@ preserves count, IDs and order; malformed provider results fail rather than bein
 Provider translations that exceed the configured per-chunk or combined character limits fail
 `502 BAD_UPSTREAM_RESPONSE`, rather than returning unbounded expanded text.
 Same-language requests return unchanged text/IDs without a provider after access, rate and
-language checks. Different languages use the optional configured OpenAI adapter or return `503`
-when disabled/missing a key. Incomplete structured output or mismatched IDs fail `502`; the
+language checks. Different languages use the selected OpenAI or Gemini adapter or return `503`
+when disabled/missing its key. Incomplete structured output or mismatched IDs fail `502`; the
 default 600-token text output budget may be too small for long translations. Input text is
 document data, never executable instructions.
 
@@ -65,8 +65,8 @@ as `502`. This structural rule does not
 verify factual grounding or prove resistance to prompt injection; evaluate real adapters separately.
 Answers are limited to 2,000 characters by default and oversized provider results fail `502`,
 not silently truncate.
-Page context is always untrusted data; the backend does not fetch URLs. With OpenAI enabled,
-structured results are validated, but a source label is not proof of factual grounding.
+Page context is always untrusted data; the backend does not fetch URLs. With either provider
+enabled, structured results are validated, but a source label is not proof of factual grounding.
 Requests without an enabled provider/key return `503`.
 
 ## `POST /api/v1/transcribe`
@@ -86,11 +86,15 @@ a deliberate change from the earlier proposed acceptance. Maximum audio content
 is 5,000,000 bytes; PCM WAV duration is limited to 60 seconds; request transport max is
 5,065,536 bytes. Empty or malformed WAV files fail `400`; unsupported media/codec fails `415`.
 Provider transcripts over 4,000 characters, blank text and invalid detected language tags fail
-`502`. The `gpt-transcribe` file API accepts WAV; when no single detected language is available,
-the result language is null. Regional hints except `zh-CN`, `zh-TW`, `zh-HK` fail
-`422 UNSUPPORTED_LANGUAGE` with this adapter. Other syntactically accepted tags are not
-guaranteed supported. Uploaded files are closed; the SDK receives a short-lived in-memory
-buffer. Without an enabled provider/key, transcription returns `503`.
+`502`. The OpenAI `gpt-transcribe` file API accepts WAV; when no single detected language is
+available, the result language is null. OpenAI regional hints except `zh-CN`, `zh-TW`, `zh-HK`
+fail `422 UNSUPPORTED_LANGUAGE`. Gemini accepts the same validated WAV publicly and transmits
+bounded audio inline (not through the Files API), using `gemini-3.5-transcribe` in verbatim mode.
+Its optional hint is mapped only for `en`, `en-US`, `en-GB`, `es`, `es-US`, `fr`, `fr-FR`, `de`,
+`de-DE`, `pt`, `pt-BR`, `pt-PT`; other hints fail `422 UNSUPPORTED_LANGUAGE`. Gemini currently
+returns `language: null` rather than guessing a detected locale from plain-text output.
+Other syntactically accepted tags are not guaranteed supported. Uploaded files are closed;
+without an enabled selected provider/key, transcription returns `503`.
 
 ## Shared validation, errors and operations
 
@@ -118,7 +122,7 @@ Failures have the shape:
 | 401 | `UNAUTHORIZED` | Missing or invalid production gateway key |
 | 403 | `FORBIDDEN` | Non-loopback peer in local mode |
 | 422 | `INVALID_INPUT` | Invalid JSON/schema, missing part or malformed language hint |
-| 422 | `UNSUPPORTED_LANGUAGE` | Configured language capability list excludes the request tag |
+| 422 | `UNSUPPORTED_LANGUAGE` | Configured language capability list excludes the request tag, or transcription adapter cannot represent the hint |
 | 413 | `PAYLOAD_TOO_LARGE` | Request or configured semantic limit exceeded |
 | 415 | `UNSUPPORTED_MEDIA_TYPE` | Unsupported audio MIME/codec or content encoding |
 | 429 | `RATE_LIMITED` | Process-local peer request limit; includes `Retry-After` |
@@ -145,16 +149,21 @@ text adapter honors the configured 600-token output budget (configurable up to 1
 character ceilings are enforced separately. No automatic SDK retries. Client disconnect
 cancellation is best-effort; it cannot guarantee avoiding provider charges. Diagnostic logs contain
 only request ID and fixed failure category, not prompts, transcripts, audio or credentials.
-The shared async SDK client uses the configured 30-second timeout and closes at shutdown.
-The file-transcription endpoint does not expose a documented output-token cap; the backend checks
-transcript characters after the call. Text requests set `store=false`, which is not a provider
-zero-retention guarantee.
+The selected async SDK client uses the configured 30-second timeout and closes at shutdown.
+The transcription adapters check transcript characters after the call. OpenAI text and Gemini
+text/transcription requests set `store=false`, which is not a provider zero-retention guarantee.
+Gemini transcription uses stateless Interactions requests because storage is otherwise enabled
+there by default; no cross-provider fallback is attempted.
 
-Default models: `gpt-6.1-terra` for text (documented Responses structured outputs; $1/1M input
-and $5/1M output tokens in reviewed pricing) and `gpt-transcribe` for file audio (documented
-WAV support; $0.0045/minute in reviewed pricing). Pricing, account availability and quotas can
-change. Provider documentation does not guarantee comprehensive text language quality; configure
-`SUPPORTED_LANGUAGES` to an operator-tested list. Offline SDK mocks are not a live test.
+The selected provider is configured only by the backend with `AI_PROVIDER=unconfigured|openai|gemini`.
+OpenAI defaults to `OPENAI_TEXT_MODEL=gpt-6.1-terra` and
+`OPENAI_TRANSCRIPTION_MODEL=gpt-transcribe`; Gemini defaults to
+`GEMINI_TEXT_MODEL=gemini-3.8-flash` and
+`GEMINI_TRANSCRIPTION_MODEL=gemini-3.5-transcribe`. The selected vendor's API key is private to
+the server. Model access, billing, quotas and language quality must be verified with the actual
+account; configure `SUPPORTED_LANGUAGES` to an operator-tested list. Offline SDK mocks are not
+a live test. Switching providers does not change public v1 DTOs, but changing accepted language
+hints or formats requires a contract review.
 
 ## Frontend integration/migration (not yet implemented)
 
