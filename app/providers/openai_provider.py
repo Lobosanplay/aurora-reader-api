@@ -16,7 +16,7 @@ from openai.types.audio import Transcription
 from pydantic import ValidationError
 
 from app.core.config import Settings
-from app.prompts.answer import ANSWER_POLICY
+from app.prompts.answer import ANSWER_FORMAT_POLICY
 from app.prompts.translate import TRANSLATE_POLICY
 from app.providers.errors import (
     ProviderInvalidResponse,
@@ -24,6 +24,7 @@ from app.providers.errors import (
     ProviderRateLimited,
     ProviderTimedOut,
     ProviderUnavailable,
+    ProviderUnsupportedLanguage,
 )
 from app.schemas.common import StrictModel, validate_language
 from app.schemas.question import QuestionResponse
@@ -142,11 +143,7 @@ class OpenAIProvider:
     async def answer(self, question: str, language: str, context: str) -> QuestionResponse:
         result = await self._parse(
             QuestionResponse,
-            ANSWER_POLICY
-            + " Return 2–4 concise sentences. A page title alone does not prove a claim. "
-            "For general knowledge explicitly signal that it is not from the page. "
-            "Use source=page only if the supplied excerpts support the claims; otherwise "
-            "use general or insufficient. Set context_sufficient true only for page.",
+            ANSWER_FORMAT_POLICY,
             {"question": question, "language": language, "page_context": context},
         )
         if len(result.answer) > self.settings.max_answer_chars or (
@@ -158,6 +155,8 @@ class OpenAIProvider:
     async def transcribe(
         self, audio: bytes, media_type: str, language: str | None
     ) -> TranscriptionResponse:
+        if language and "-" in language and language not in ("zh-CN", "zh-TW", "zh-HK"):
+            raise ProviderUnsupportedLanguage()
         # The SDK accepts a (filename, bytes, MIME) tuple without writing a temporary file.
         if media_type != "audio/wav":
             raise ProviderInvalidResponse()

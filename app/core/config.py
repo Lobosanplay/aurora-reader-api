@@ -10,10 +10,13 @@ from app.schemas.common import validate_language
 class Settings(BaseSettings):
     model_config = SettingsConfigDict(env_file=".env", extra="ignore")
 
-    ai_provider: Literal["unconfigured", "openai"] = "unconfigured"
+    ai_provider: Literal["unconfigured", "openai", "gemini"] = "unconfigured"
     openai_api_key: SecretStr | None = None
     openai_text_model: str = Field(default="gpt-6.1-terra", min_length=1)
     openai_transcription_model: str = Field(default="gpt-transcribe", min_length=1)
+    gemini_api_key: SecretStr | None = None
+    gemini_text_model: str = Field(default="gemini-3.8-flash", min_length=1)
+    gemini_transcription_model: str = Field(default="gemini-3.5-transcribe", min_length=1)
     deployment_mode: Literal["local", "production"] = "local"
     trusted_gateway_enabled: bool = False
     api_access_key: SecretStr | None = None
@@ -38,7 +41,15 @@ class Settings(BaseSettings):
 
     @model_validator(mode="after")
     def deployment_safety(self) -> "Settings":
-        if not self.openai_text_model.strip() or not self.openai_transcription_model.strip():
+        if any(
+            not model.strip()
+            for model in (
+                self.openai_text_model,
+                self.openai_transcription_model,
+                self.gemini_text_model,
+                self.gemini_transcription_model,
+            )
+        ):
             raise ValueError("Model names must not be blank")
         self.supported_languages = [validate_language(tag) for tag in self.supported_languages]
         if len(set(self.supported_languages)) != len(self.supported_languages):

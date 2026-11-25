@@ -2,12 +2,15 @@
 
 The API does not intentionally persist user page text, questions, transcripts or recordings.
 The multipart parser may spool large uploads to temporary storage; upload resources are closed
-after the request. When explicitly enabled, the OpenAI adapter sends selected page/question
-text or a short validated WAV to OpenAI. Application code does not log prompts, transcripts or
-audio; text calls set `store=false`, and transcription uses a short-lived in-memory buffer.
-`store=false` is not a zero-retention guarantee. Review vendor retention, abuse monitoring,
-residency, SDK/network telemetry and infrastructure logs before sending real user content. The
-default provider is disabled and requires a backend-only key to activate.
+after the request. The selected OpenAI or Gemini adapter sends necessary page/question text
+or short validated WAV audio to its configured vendor. Gemini sends bounded audio inline, not
+through the remote Files API. Application code does not log prompts, transcripts or audio.
+OpenAI text and Gemini text/transcription calls request `store=false`; OpenAI audio uses a
+short-lived in-memory buffer. Gemini Interactions otherwise stores requests by default:
+`store=false` is deliberate, but does **not** establish zero vendor retention. Review each
+vendor's retention, training/abuse monitoring, residency, account tier, SDK/network telemetry
+and infrastructure logs before sending real user content. The default provider is disabled
+and the selected provider requires its own backend-only key.
 
 Only explicitly configured origins are allowed by CORS, but CORS does not stop non-browser
 clients. Local mode rejects non-loopback ASGI peers; do not proxy local mode publicly.

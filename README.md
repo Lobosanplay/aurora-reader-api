@@ -2,8 +2,8 @@
 
 Backend foundation for the Aurora Reader browser extension. The API handles bounded translation,
 contextual questions and user-initiated audio transcription; browser extraction, playback and
-recording remain extension responsibilities. The optional OpenAI adapter supplies real inference
-when explicitly enabled with a backend-only credential. Otherwise model-dependent requests return
+recording remain extension responsibilities. Select an OpenAI or Gemini adapter with a backend-only
+credential; no provider is enabled by default. Otherwise model-dependent requests return
 `503 PROVIDER_UNAVAILABLE`; identical source/target translation remains a local operation.
 
 ## Requirements and local setup
@@ -46,14 +46,23 @@ the permission update; this cannot be fixed by changing this repository's workfl
 
 Configuration uses environment variables (see `.env.example`); Pydantic Settings also loads
 an ignored local `.env`. `AI_PROVIDER=unconfigured` is the default. For **controlled loopback
-development only**, set `AI_PROVIDER=openai` and provide `OPENAI_API_KEY` privately to the backend.
-Installing `pip install -e ".[dev]"` includes the official `openai>=2.54,<3` SDK. A key alone
-does not activate inference; opting in without a key leaves inference unavailable (503).
-`OPENAI_TEXT_MODEL=gpt-6.1-terra` handles translation and answers;
-`OPENAI_TRANSCRIPTION_MODEL=gpt-transcribe` handles WAV transcription. Replacements must support
-Responses structured parsing or file transcription respectively. The async client is shared for
-the app lifespan and closed at shutdown, with a 30-second SDK timeout and zero SDK retries.
-Text calls use `store=false`, `reasoning.effort=none`, and the configured output-token budget.
+development only**, choose `AI_PROVIDER=openai` with `OPENAI_API_KEY`, or `AI_PROVIDER=gemini`
+with `GEMINI_API_KEY`, privately on the backend. A key for the other provider does not activate
+inference; the selected provider without a key returns 503. Never put provider keys or the gateway's
+`API_ACCESS_KEY` in the extension. Installation includes official OpenAI and `google-genai` SDKs.
+
+| Provider | Text (translation and answers) | WAV transcription |
+|---|---|---|
+| OpenAI | `OPENAI_TEXT_MODEL=gpt-6.1-terra` | `OPENAI_TRANSCRIPTION_MODEL=gpt-transcribe` |
+| Gemini | `GEMINI_TEXT_MODEL=gemini-3.8-flash` | `GEMINI_TRANSCRIPTION_MODEL=gemini-3.5-transcribe` |
+
+Model names are backend-only and must match provider capabilities and account access.
+`app/providers/factory.py` selects an adapter implementing `app/providers/base.py`; adding another
+provider requires configuration, an adapter and one factory registration, not route changes.
+There is **no automatic cross-provider fallback**. The selected async client is shared for the app
+lifespan and closed at shutdown, with a 30-second deadline and zero SDK retries. OpenAI text calls
+use `store=false`, `reasoning.effort=none`; Gemini text and transcription calls use `store=false`,
+no retrieval tools and a bounded text output-token budget.
 
 Default limits: 20 chunks, 4,000 characters each, 20,000 total translation characters;
 1,000 question characters; 12,000 context characters with up to 5 related chunks; 5,000,000
@@ -65,10 +74,14 @@ environment names. The multipart transport budget includes 65,536 bytes overhead
 is accepted. Ogg and WebM are rejected until codec, duration and integrity checks are available.
 Large translations may exceed the default output-token budget and fail `502` rather than drop
 chunks; choose an appropriate bounded `MAX_RESPONSE_TOKENS` before sending long texts. For
-transcription, the SDK receives an in-memory WAV. The optional hint is forwarded when present;
-regional hints other than `zh-CN`, `zh-TW`, `zh-HK` fail `422 UNSUPPORTED_LANGUAGE` because the
-provider only documents regional `zh` hints. Other syntactically valid tags do **not** guarantee
-model support or accuracy; set `SUPPORTED_LANGUAGES` to an operator-tested list.
+transcription, OpenAI receives an in-memory WAV; Gemini sends inline audio, not a Files API upload.
+The optional hint is forwarded when present. OpenAI regional hints other than `zh-CN`, `zh-TW`,
+`zh-HK` fail `422 UNSUPPORTED_LANGUAGE`. Gemini currently maps only `en`, `en-US`, `en-GB`, `es`,
+`es-US`, `fr`, `fr-FR`, `de`, `de-DE`, `pt`, `pt-BR`, `pt-PT` to supported transcription locales;
+other hints fail `422` rather than being guessed or ignored. Gemini's plain-text transcription
+response does not guarantee a single detected language, so its v1 response has `language: null`.
+Other syntactically valid tags do **not** guarantee model support or accuracy; set
+`SUPPORTED_LANGUAGES` to an operator-tested list.
 
 The default allowed browser origin is `http://localhost:5173`; configure `ALLOWED_ORIGINS`
 as a JSON list including the actual `chrome-extension://<id>` origin when known. `DEPLOYMENT_MODE=local`
@@ -95,14 +108,17 @@ means syntax-only validation, **not** verified model support.
 
 No audio, page text or transcript
 is persisted by application code; multipart parsing may temporarily spool uploads to disk and
-closes them after handling. `store=false` for text does not establish zero provider retention;
+closes them after handling. `store=false` does not establish zero provider retention;
 third-party data handling must be reviewed before sending real content.
 
-Recheck official [model details](https://developers.openai.com/api/docs/models/gpt-6.1-terra),
-[structured outputs](https://developers.openai.com/api/docs/guides/structured-outputs),
-[file transcription](https://developers.openai.com/api/docs/guides/speech-to-text) and
-[pricing](https://developers.openai.com/api/docs/pricing) before changing models. Offline tests
-mock the SDK. For an **intentional live smoke test**, use a private loopback instance, an
+Recheck [OpenAI model details](https://developers.openai.com/api/docs/models/gpt-6.1-terra),
+[Gemini models](https://ai.google.dev/gemini-api/docs/models),
+[structured output](https://ai.google.dev/gemini-api/docs/structured-output),
+[transcription](https://ai.google.dev/gemini-api/docs/transcribe) and
+[Interactions retention](https://ai.google.dev/gemini-api/docs/interactions#data-storage-retention)
+before changing models. Account access, real SDK/API behavior, quality and cost remain unverified
+without a live call. Offline tests mock the SDK. For an **intentional live smoke test**, use a
+private loopback instance, an
 explicitly supplied budget-limited test credential, verified model access, short synthetic
 translation/question/WAV inputs and no repeated automatic calls. Remove the test credential
 afterward. No live calls run from `pytest`; live inference and frontend compatibility are unverified.

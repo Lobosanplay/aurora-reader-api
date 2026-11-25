@@ -59,12 +59,6 @@ class TranscriptionService:
     ) -> TranscriptionResponse:
         if language is not None:
             require_supported_language(language, self.settings.supported_languages)
-            if (
-                self.settings.ai_provider == "openai"
-                and "-" in language
-                and language not in ("zh-CN", "zh-TW", "zh-HK")
-            ):
-                raise APIError(422, "UNSUPPORTED_LANGUAGE", "Language hint is not supported.")
         if not audio:
             raise APIError(400, "INVALID_AUDIO", "Audio is empty.")
         if len(audio) > self.settings.max_audio_bytes:
