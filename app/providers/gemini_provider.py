@@ -54,12 +54,12 @@ def _map_error(exc: Exception) -> Exception:
     if isinstance(exc, errors.APIError):
         code = exc.code
         if code in (408, 504):
-            return ProviderTimedOut()
+            return ProviderTimedOut(upstream_status_code=code)
         if code == 429:
-            return ProviderRateLimited()
+            return ProviderRateLimited(upstream_status_code=code)
         if code == 403 and exc.status == "RESOURCE_EXHAUSTED":
-            return ProviderQuotaExceeded()
-        return ProviderUnavailable()
+            return ProviderQuotaExceeded(upstream_status_code=code)
+        return ProviderUnavailable(upstream_status_code=code)
     return ProviderUnavailable()
 
 
@@ -98,7 +98,6 @@ class GeminiProvider:
                     response_mime_type="application/json",
                     response_json_schema=model_type.model_json_schema(),
                     max_output_tokens=self.settings.max_response_tokens,
-                    candidate_count=1,
                     store=False,
                 ),
             )

@@ -42,14 +42,27 @@ class BoundedProvider:
             async with asyncio.timeout(self.settings.ai_request_timeout_seconds):
                 async with self.semaphore:
                     return await operation(*args)
-        except (TimeoutError, ProviderTimedOut):
-            logger.warning("provider_failure request_id=%s category=timeout", self.request_id)
+        except (TimeoutError, ProviderTimedOut) as exc:
+            status = exc.upstream_status_code if isinstance(exc, ProviderTimedOut) else None
+            logger.warning(
+                "provider_failure request_id=%s category=timeout upstream_http_status=%s",
+                self.request_id,
+                status,
+            )
             raise APIError(504, "PROVIDER_TIMEOUT", "Provider request timed out.") from None
-        except ProviderRateLimited:
-            logger.warning("provider_failure request_id=%s category=rate_limited", self.request_id)
+        except ProviderRateLimited as exc:
+            logger.warning(
+                "provider_failure request_id=%s category=rate_limited upstream_http_status=%s",
+                self.request_id,
+                exc.upstream_status_code,
+            )
             raise APIError(429, "PROVIDER_RATE_LIMITED", "Provider rate limit reached.") from None
-        except ProviderQuotaExceeded:
-            logger.warning("provider_failure request_id=%s category=quota", self.request_id)
+        except ProviderQuotaExceeded as exc:
+            logger.warning(
+                "provider_failure request_id=%s category=quota upstream_http_status=%s",
+                self.request_id,
+                exc.upstream_status_code,
+            )
             raise APIError(503, "PROVIDER_QUOTA_EXCEEDED", "Provider quota exhausted.") from None
         except ProviderInvalidResponse:
             logger.warning("provider_failure request_id=%s category=invalid", self.request_id)
@@ -58,8 +71,12 @@ class BoundedProvider:
             ) from None
         except ProviderUnsupportedLanguage:
             raise APIError(422, "UNSUPPORTED_LANGUAGE", "Language hint is not supported.") from None
-        except ProviderUnavailable:
-            logger.warning("provider_failure request_id=%s category=unavailable", self.request_id)
+        except ProviderUnavailable as exc:
+            logger.warning(
+                "provider_failure request_id=%s category=unavailable upstream_http_status=%s",
+                self.request_id,
+                exc.upstream_status_code,
+            )
             raise APIError(503, "PROVIDER_UNAVAILABLE", "Inference provider unavailable.") from None
         except APIError:
             raise

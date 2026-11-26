@@ -23,5 +23,7 @@ rate and cost quotas, HTTPS, backend network isolation and operational monitorin
 `TRUSTED_GATEWAY_ENABLED` without such a gateway. Avoid recording gateway keys in access logs.
 Review proxy upload limits and extension origins, including published extension IDs. Treat all
 supplied page text as untrusted. Source labels are structurally checked, not factual proof.
-Application provider diagnostics log only an opaque request ID
-and a fixed error category; infrastructure logging and third-party retention need separate review.
+Application provider diagnostics log only an opaque request ID, a fixed error category,
+and a numeric upstream HTTP status when the adapter received one. `None` means no HTTP
+status was captured; neither vendor error messages nor request contents are logged.
+Infrastructure logging and third-party retention need separate review.
