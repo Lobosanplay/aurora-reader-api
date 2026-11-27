@@ -1,5 +1,6 @@
 import asyncio
 import json
+import logging
 from types import SimpleNamespace
 from typing import cast
 
@@ -90,6 +91,7 @@ def test_structured_translation_and_answer_are_validated():
         assert "untrusted" in config.system_instruction
         assert config.response_mime_type == "application/json"
         assert config.max_output_tokens == 600
+        assert config.candidate_count is None
         assert config.store is False
         assert config.tools is None
         for invalid in (
@@ -176,6 +178,7 @@ def test_wav_inline_hint_and_transcript_failures():
             ProviderQuotaExceeded,
         ),
         (errors.ClientError(401, {"error": {"message": "private"}}), ProviderUnavailable),
+        (errors.ServerError(503, {"error": {"message": "private"}}), ProviderUnavailable),
         (errors.ServerError(504, {"error": {"message": "private"}}), ProviderTimedOut),
         (TimeoutError("private"), ProviderTimedOut),
     ],
@@ -184,13 +187,60 @@ def test_gemini_errors_are_normalized(failure, mapped):
     async def run():
         sdk = MockSDK()
         sdk.text_result = failure
-        with pytest.raises(mapped):
+        with pytest.raises(mapped) as text_error:
             await provider(sdk).translate([TranslationChunk(id="a", text="Hi")], "en", "es")
+        expected_status = failure.code if isinstance(failure, errors.APIError) else None
+        assert text_error.value.upstream_status_code == expected_status
         sdk.audio_result = failure
-        with pytest.raises(mapped):
+        with pytest.raises(mapped) as audio_error:
             await provider(sdk).transcribe(WAV, "audio/wav", None)
+        assert audio_error.value.upstream_status_code == expected_status
 
     asyncio.run(run())
+
+
+def test_upstream_status_logged_with_request_id_for_all_routes(monkeypatch, caplog):
+    sdk = MockSDK()
+    private_error = errors.ServerError(503, {"error": {"message": "private upstream detail"}})
+    sdk.text_result = private_error
+    sdk.audio_result = private_error
+
+    class FakeGemini(GeminiProvider):
+        def __init__(self, settings):
+            super().__init__(settings, cast(genai.Client, sdk))
+
+    monkeypatch.setattr("app.providers.factory.GeminiProvider", FakeGemini)
+    settings = Settings(ai_provider="gemini", gemini_api_key=SecretStr("test-only"))
+    with (
+        caplog.at_level(logging.WARNING),
+        TestClient(create_app(settings), client=("127.0.0.1", 12345)) as client,
+    ):
+        responses = [
+            client.post(
+                "/api/v1/translate",
+                json={
+                    "source_language": "en",
+                    "target_language": "es",
+                    "chunks": [{"id": "a", "text": "Hello"}],
+                },
+            ),
+            client.post(
+                "/api/v1/ask",
+                json={"question": "What?", "language": "en", "context": {"current_chunk": "Fact"}},
+            ),
+            client.post("/api/v1/transcribe", files={"file": ("sample.wav", WAV, "audio/wav")}),
+        ]
+    assert len(sdk.text_calls) == 2 and len(sdk.audio_calls) == 1
+    for response in responses:
+        assert response.status_code == 503
+        assert response.json()["error"]["code"] == "PROVIDER_UNAVAILABLE"
+        request_id = response.json()["error"]["request_id"]
+        assert (
+            f"request_id={request_id} category=unavailable upstream_http_status=503" in caplog.text
+        )
+    assert "private upstream detail" not in caplog.text
+    assert "Hello" not in caplog.text
+    assert "Fact" not in caplog.text
 
 
 def test_lifespan_selection_and_three_routes_offline(monkeypatch):
